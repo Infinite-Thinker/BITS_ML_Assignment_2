@@ -1,7 +1,8 @@
 """
 Model training and evaluation suite for QSAR Chemical Biodegradation.
-Part 1 (Commit 5): Logistic Regression and Decision Tree Classifier,
-bundled as full preprocessing + classification Pipelines and saved via joblib.
+Part 2 (Commit 6): All 5 classifiers (Logistic Regression, Decision Tree,
+KNN, Gaussian Naive Bayes, and Support Vector Machine) bundled as full
+preprocessing + classification Pipelines and saved via joblib.
 """
 
 from pathlib import Path
@@ -18,7 +19,10 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
+from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 
 from preprocess import (
@@ -77,8 +81,12 @@ def compute_six_metrics(
 
 def build_candidate_estimators() -> Dict[str, Dict[str, Any]]:
     """
-    Return registry of classification models and their target artifact filenames.
-    Part 1 includes Logistic Regression and Decision Tree Classifier.
+    Return registry of all 5 required classification models and their artifact names:
+      1. Logistic Regression
+      2. Decision Tree
+      3. KNN
+      4. Naive Bayes (GaussianNB; requires dense array output from ColumnTransformer)
+      5. Support Vector Machine (SVC with probability=True for Platt-scaled ROC-AUC)
     """
     return {
         "Logistic Regression": {
@@ -99,11 +107,36 @@ def build_candidate_estimators() -> Dict[str, Dict[str, Any]]:
                 random_state=SPLIT_SEED,
             ),
         },
+        "KNN": {
+            "artifact_name": "knn.joblib",
+            "estimator": KNeighborsClassifier(
+                n_neighbors=7,
+                weights="distance",
+                metric="minkowski",
+                p=2,
+            ),
+        },
+        "Naive Bayes": {
+            "artifact_name": "naive_bayes.joblib",
+            "estimator": GaussianNB(
+                var_smoothing=1e-9,
+            ),
+        },
+        "Support Vector Machine": {
+            "artifact_name": "svm.joblib",
+            "estimator": SVC(
+                C=1.5,
+                kernel="rbf",
+                gamma="scale",
+                probability=True,  # Required so predict_proba is available for ROC-AUC
+                random_state=SPLIT_SEED,
+            ),
+        },
     }
 
 
 def train_and_persist_models() -> pd.DataFrame:
-    """Fit each full Pipeline on X_train, evaluate on X_test, and save to model/."""
+    """Fit all 5 full Pipelines on X_train, evaluate on X_test, and save to model/."""
     MODEL_STORE_DIR.mkdir(parents=True, exist_ok=True)
     X_train, X_test, y_train, y_test = PartitionedDataset(save_holdout_csv=False)
 
@@ -111,7 +144,7 @@ def train_and_persist_models() -> pd.DataFrame:
     evaluation_records = []
 
     print("=" * 78)
-    print("QSAR BIODEGRADATION -- MODEL TRAINING & EVALUATION (PART 1)")
+    print("QSAR BIODEGRADATION -- MODEL TRAINING & EVALUATION (ALL 5 CLASSIFIERS)")
     print("=" * 78)
 
     for model_label, spec in registry.items():
@@ -123,7 +156,6 @@ def train_and_persist_models() -> pd.DataFrame:
         )
         full_pipe.fit(X_train, y_train)
 
-        # Evaluate on training set (to monitor overfitting) and holdout test set
         train_acc = accuracy_score(y_train, full_pipe.predict(X_train))
         y_test_pred = full_pipe.predict(X_test)
         y_test_prob = full_pipe.predict_proba(X_test)
@@ -146,8 +178,6 @@ def train_and_persist_models() -> pd.DataFrame:
         )
 
     summary_df = pd.DataFrame(evaluation_records)
-    print("\n--- Holdout Test Metrics Summary (Part 1) ---")
-    print(summary_df.to_string(index=False))
     print("=" * 78)
     return summary_df
 
