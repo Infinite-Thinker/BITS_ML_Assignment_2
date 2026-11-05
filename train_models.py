@@ -1,12 +1,12 @@
 """
-Model training and evaluation suite for QSAR Chemical Biodegradation.
-Part 2 (Commit 6): All 5 classifiers (Logistic Regression, Decision Tree,
-KNN, Gaussian Naive Bayes, and Support Vector Machine) bundled as full
-preprocessing + classification Pipelines and saved via joblib.
+Model training, persistence, and comparative evaluation suite for
+QSAR Chemical Biodegradation (all 5 required classification models).
+Saves compressed Pipeline artifacts into model/ and exports results.csv.
 """
 
 from pathlib import Path
 from typing import Dict, Any
+import warnings
 import joblib
 import numpy as np
 import pandas as pd
@@ -32,8 +32,10 @@ from preprocess import (
     build_descriptor_preprocessor,
 )
 
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 MODEL_STORE_DIR = PROJECT_ROOT / "model"
+RESULTS_CSV_PATH = PROJECT_ROOT / "results.csv"
 
 
 def compute_six_metrics(
@@ -74,7 +76,7 @@ def compute_six_metrics(
         "AUC": round(auc, 4),
         "Precision": round(prec, 4),
         "Recall": round(rec, 4),
-        "F1": round(f1, 4),
+        "F1": round(f1_score(y_true, y_pred, zero_division=0) if is_binary else f1, 4),
         "MCC": round(mcc, 4),
     }
 
@@ -85,8 +87,8 @@ def build_candidate_estimators() -> Dict[str, Dict[str, Any]]:
       1. Logistic Regression
       2. Decision Tree
       3. KNN
-      4. Naive Bayes (GaussianNB; requires dense array output from ColumnTransformer)
-      5. Support Vector Machine (SVC with probability=True for Platt-scaled ROC-AUC)
+      4. Naive Bayes (GaussianNB)
+      5. Support Vector Machine (SVC with probability=True for ROC-AUC)
     """
     return {
         "Logistic Regression": {
@@ -128,7 +130,7 @@ def build_candidate_estimators() -> Dict[str, Dict[str, Any]]:
                 C=1.5,
                 kernel="rbf",
                 gamma="scale",
-                probability=True,  # Required so predict_proba is available for ROC-AUC
+                probability=True,
                 random_state=SPLIT_SEED,
             ),
         },
@@ -136,16 +138,16 @@ def build_candidate_estimators() -> Dict[str, Dict[str, Any]]:
 
 
 def train_and_persist_models() -> pd.DataFrame:
-    """Fit all 5 full Pipelines on X_train, evaluate on X_test, and save to model/."""
+    """Fit all 5 full Pipelines on X_train, evaluate on X_test, save models and results.csv."""
     MODEL_STORE_DIR.mkdir(parents=True, exist_ok=True)
     X_train, X_test, y_train, y_test = PartitionedDataset(save_holdout_csv=False)
 
     registry = build_candidate_estimators()
     evaluation_records = []
 
-    print("=" * 78)
-    print("QSAR BIODEGRADATION -- MODEL TRAINING & EVALUATION (ALL 5 CLASSIFIERS)")
-    print("=" * 78)
+    print("=" * 80)
+    print("QSAR BIODEGRADATION -- 5-MODEL BENCHMARK & COMPARISON TABLE")
+    print("=" * 80)
 
     for model_label, spec in registry.items():
         full_pipe = Pipeline(
@@ -163,22 +165,22 @@ def train_and_persist_models() -> pd.DataFrame:
 
         artifact_path = MODEL_STORE_DIR / spec["artifact_name"]
         joblib.dump(full_pipe, artifact_path, compress=3)
-        size_kb = artifact_path.stat().st_size / 1024.0
 
         row = {"ML Model Name": model_label, **test_metrics}
         evaluation_records.append(row)
 
-        print(f"\n[{model_label}]")
-        print(f"  Saved Pipeline : {artifact_path.relative_to(PROJECT_ROOT)} ({size_kb:.1f} KB)")
-        print(f"  Train Accuracy : {train_acc:.4f} | Holdout Test Accuracy : {test_metrics['Accuracy']:.4f}")
         print(
-            f"  Test Metrics   : AUC={test_metrics['AUC']:.4f}, "
-            f"Precision={test_metrics['Precision']:.4f}, Recall={test_metrics['Recall']:.4f}, "
-            f"F1={test_metrics['F1']:.4f}, MCC={test_metrics['MCC']:.4f}"
+            f"{model_label:24s} | Train Acc: {train_acc:.4f} | "
+            f"Test Acc: {test_metrics['Accuracy']:.4f} | AUC: {test_metrics['AUC']:.4f} | "
+            f"MCC: {test_metrics['MCC']:.4f}"
         )
 
     summary_df = pd.DataFrame(evaluation_records)
-    print("=" * 78)
+    summary_df.to_csv(RESULTS_CSV_PATH, index=False)
+
+    print("\n--- Final 5x6 Evaluation Metrics Table (Saved to results.csv) ---")
+    print(summary_df.to_string(index=False))
+    print("=" * 80)
     return summary_df
 
 
