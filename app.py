@@ -42,7 +42,7 @@ METRIC_COLUMNS: List[str] = ["Accuracy", "AUC", "Precision", "Recall", "F1", "MC
 
 
 st.set_page_config(
-    page_title="EcoMol QSAR | Biodegradability Classifier",
+    page_title="2026AJ05253 | QSAR Biodegradability",
     page_icon="🧪",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -346,6 +346,7 @@ def render_sidebar() -> Tuple[str, Optional[pd.DataFrame]]:
     """Render sidebar controls for model selection, sample CSV download, and test upload."""
     with st.sidebar:
         st.markdown("## 🧪 EcoMol QSAR Controls")
+        st.markdown("**BITS Roll No:** `2026AJ05253`")
         st.caption(
             "Select a pre-trained classifier and upload holdout test data (`test_data.csv`) "
             "for zero-retraining evaluation."
@@ -400,6 +401,9 @@ def main() -> None:
         """
         <div class="ecomol-banner">
             <h1>🧪 EcoMol QSAR: Chemical Biodegradability Screening Workbench</h1>
+            <p style="margin-bottom: 0.45rem; font-weight: 600; color: #5eead4;">
+                BITS Pilani WILP — M.Tech (AIML) Machine Learning Assignment 2 &nbsp;|&nbsp; Roll No: 2026AJ05253
+            </p>
             <p>
                 End-to-end evaluation of 5 pre-trained classification pipelines across 41 molecular
                 descriptors (UCI QSAR Biodegradation benchmark). Models are loaded via

@@ -2,6 +2,7 @@
 
 **Course:** M.Tech (AIML) — Work Integrated Learning Programmes (WILP)  
 **Subject:** Machine Learning — Assignment 2  
+**BITS Roll Number:** `2026AJ05253`  
 
 ---
 
@@ -35,7 +36,7 @@ In this assignment, the goal is to build a machine learning classification pipel
 ## c. GitHub Repository Link
 
 - **GitHub Repository Link:** [https://github.com/Infinite-Thinker/BITS_ML_Assignment_2](https://github.com/Infinite-Thinker/BITS_ML_Assignment_2)
-- **Live Streamlit App Link:** *(Will be added after deploying on Streamlit Community Cloud)*
+- **Live Streamlit App Link:** [https://2026aj05253.streamlit.app](https://2026aj05253.streamlit.app)
 
 ### Project Folder Structure
 ```text
