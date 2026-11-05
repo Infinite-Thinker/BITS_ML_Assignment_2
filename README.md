@@ -12,7 +12,15 @@ M.Tech (AIML) — Machine Learning Assignment 2
 
 ## b. Dataset Description
 
-<!-- TODO (Commit 2 / Commit 12): Fill dataset source, rows, feature count, target classes, and class balance -->
+- **Dataset Name:** QSAR Biodegradation Dataset (Mansouri et al., *Journal of Chemical Information and Modeling*, 2013)
+- **Source Repository:** [UCI Machine Learning Repository — QSAR Biodegradation (ID: 254)](https://archive.ics.uci.edu/dataset/254/qsar+biodegradation)
+- **Number of Instances (Rows):** `1,055` chemical compounds (exceeds minimum requirement of 500 instances)
+- **Number of Input Features:** `41` molecular descriptors (`17` continuous topological/matrix eigenvalues and information indices + `24` discrete atom/fragment counts and 2D frequency descriptors; exceeds minimum requirement of 12 features)
+- **Missing Values:** `0` (complete dataset with no missing values)
+- **Target Variable (`biodeg_class`):** Binary classification indicating experimental environmental biodegradability:
+  - `NRB` (**Not Readily Biodegradable** — encoded as `0`): `699` molecules (`66.26%`)
+  - `RB` (**Readily Biodegradable** — encoded as `1`): `356` molecules (`33.74%`)
+- **Class Balance:** Moderately imbalanced (~2:1 ratio of `NRB` to `RB`), making metrics like **MCC**, **F1**, and **ROC-AUC** particularly informative alongside raw Accuracy.
 
 ---
 
