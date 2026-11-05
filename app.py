@@ -1,7 +1,8 @@
 """
 EcoMol QSAR — Interactive Chemical Biodegradability Evaluation Portal
-Streamlit web application (Commit 9: Zero-retraining inference on uploaded test
-compounds, 6-metric st.metric cards, confusion matrix heatmap, and classification report).
+Streamlit web application (Commit 10: All-model comparison bar chart from
+results.csv, sample test_data.csv download button, dataset info expander,
+multi-tab interface, and custom environmental-chemistry styling).
 """
 
 from pathlib import Path
@@ -16,16 +17,18 @@ from sklearn.metrics import classification_report, confusion_matrix
 
 from preprocess import (
     RAW_DATASET_PATH,
+    HOLDOUT_TEST_CSV_PATH,
     TARGET_COLUMN,
     LABEL_TO_INT,
     INT_TO_LABEL,
     encode_biodeg_target,
 )
-from train_models import compute_six_metrics
+from train_models import RESULTS_CSV_PATH, compute_six_metrics
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODEL_STORE_DIR = PROJECT_ROOT / "model"
+ASSETS_DIR = PROJECT_ROOT / "assets"
 
 MODEL_ARTIFACTS: Dict[str, str] = {
     "Logistic Regression": "logistic_regression.joblib",
@@ -34,6 +37,8 @@ MODEL_ARTIFACTS: Dict[str, str] = {
     "Naive Bayes": "naive_bayes.joblib",
     "Support Vector Machine": "svm.joblib",
 }
+
+METRIC_COLUMNS: List[str] = ["Accuracy", "AUC", "Precision", "Recall", "F1", "MCC"]
 
 
 st.set_page_config(
@@ -44,11 +49,75 @@ st.set_page_config(
 )
 
 
+def inject_custom_theme() -> None:
+    """Apply custom styling for the EcoMol QSAR workbench."""
+    st.markdown(
+        """
+        <style>
+        .ecomol-banner {
+            background: linear-gradient(135deg, #0f172a 0%, #134e4a 60%, #0f766e 100%);
+            color: #f8fafc;
+            padding: 1.35rem 1.6rem;
+            border-radius: 12px;
+            margin-bottom: 1.1rem;
+            border-left: 6px solid #2dd4bf;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+        }
+        .ecomol-banner h1 {
+            margin: 0 0 0.35rem 0;
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #ffffff;
+        }
+        .ecomol-banner p {
+            margin: 0;
+            font-size: 0.96rem;
+            color: #ccfbf1;
+            line-height: 1.45;
+        }
+        div[data-testid="stMetric"] {
+            background-color: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-top: 4px solid #0d9488;
+            padding: 0.75rem 0.9rem;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+        div[data-testid="stMetricLabel"] > div {
+            font-weight: 600 !important;
+            color: #334155 !important;
+        }
+        div[data-testid="stMetricValue"] > div {
+            color: #0f172a !important;
+            font-weight: 700 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 @st.cache_data
 def get_expected_descriptor_names() -> List[str]:
     """Read the 41 canonical molecular descriptor names from the reference dataset."""
     ref_df = pd.read_csv(RAW_DATASET_PATH, nrows=1)
     return [col for col in ref_df.columns if col != TARGET_COLUMN]
+
+
+@st.cache_data
+def load_sample_test_csv_bytes() -> bytes:
+    """Load the holdout test_data.csv bytes for the one-click sidebar download button."""
+    if HOLDOUT_TEST_CSV_PATH.exists():
+        return HOLDOUT_TEST_CSV_PATH.read_bytes()
+    return b""
+
+
+@st.cache_data
+def load_benchmark_results_table() -> pd.DataFrame:
+    """Load the pre-computed 5x6 model comparison table from results.csv."""
+    if not RESULTS_CSV_PATH.exists():
+        raise FileNotFoundError(f"Benchmark table not found at {RESULTS_CSV_PATH}")
+    return pd.read_csv(RESULTS_CSV_PATH)
 
 
 @st.cache_resource
@@ -168,7 +237,7 @@ def build_confusion_matrix_figure(
         cm,
         annot=annot_labels,
         fmt="",
-        cmap="Blues",
+        cmap="Teal" if "Teal" in plt.colormaps() else "YlGnBu",
         cbar=False,
         xticklabels=["Pred: NRB (0)", "Pred: RB (1)"],
         yticklabels=["Actual: NRB (0)", "Actual: RB (1)"],
@@ -204,21 +273,90 @@ def build_classification_report_table(
     return report_df.round(4)
 
 
+def build_all_models_comparison_chart(results_df: pd.DataFrame) -> plt.Figure:
+    """Plot a grouped bar chart comparing all 5 classifiers across the 6 metrics."""
+    melted = results_df.melt(
+        id_vars="ML Model Name",
+        value_vars=METRIC_COLUMNS,
+        var_name="Metric",
+        value_name="Score",
+    )
+
+    fig, ax = plt.subplots(figsize=(10.5, 4.8), dpi=135)
+    palette = ["#0f766e", "#2563eb", "#d97706", "#7c3aed", "#dc2626"]
+    sns.barplot(
+        data=melted,
+        x="Metric",
+        y="Score",
+        hue="ML Model Name",
+        palette=palette,
+        edgecolor="#1e293b",
+        linewidth=0.7,
+        ax=ax,
+    )
+
+    ax.set_ylim(0.35, 1.05)
+    ax.set_title(
+        "5-Classifier Performance Comparison Across 6 Evaluation Metrics (Holdout Test Set)",
+        fontsize=11.5,
+        fontweight="bold",
+        pad=12,
+    )
+    ax.set_xlabel("Evaluation Metric", fontsize=10)
+    ax.set_ylabel("Metric Score", fontsize=10)
+    ax.grid(axis="y", linestyle="--", alpha=0.45)
+    ax.legend(
+        title="Classifier Pipeline",
+        bbox_to_anchor=(1.01, 1.0),
+        loc="upper left",
+        frameon=True,
+        fontsize=8.8,
+        title_fontsize=9.2,
+    )
+    sns.despine()
+    fig.tight_layout()
+    return fig
+
+
+def render_dataset_overview_expander() -> None:
+    """Display an expander summarizing the UCI QSAR Biodegradation dataset and schema."""
+    with st.expander("ℹ️ About the QSAR Biodegradation Dataset & 41 Molecular Descriptors", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        c1.markdown(
+            "**Dataset Source & Scale**\n"
+            "- **Repository:** UCI ML Repository (ID 254)\n"
+            "- **Total Instances:** `1,055` chemical compounds\n"
+            "- **Stratified Split:** `844` train (`80%`) / `211` test (`20%`)\n"
+            "- **Missing Values:** `0`"
+        )
+        c2.markdown(
+            "**Feature Taxonomy (41 Descriptors)**\n"
+            "- **17 Continuous Features:** Topological & 2D matrix eigenvalues (`SpMax_L`, `J_Dz_e`, `SM6_L`, `HyWi_B_m`, `C_pct`, etc.)\n"
+            "- **24 Discrete Features:** Functional group & atom-pair counts (`nHM`, `nO`, `nN`, `nCb_minus`, `B01_C_Br`, `F04_C_N`, etc.)"
+        )
+        c3.markdown(
+            "**Target Variable (`biodeg_class`)**\n"
+            "- **`NRB` (`0`):** Not Readily Biodegradable — `699` (`66.26%`)\n"
+            "- **`RB` (`1`):** Readily Biodegradable — `356` (`33.74%`)\n"
+            "- **Domain Goal:** Screen synthetic chemicals for environmental persistence before industrial release."
+        )
+
+
 def render_sidebar() -> Tuple[str, Optional[pd.DataFrame]]:
-    """Render sidebar controls for classifier selection and holdout test CSV upload."""
+    """Render sidebar controls for model selection, sample CSV download, and test upload."""
     with st.sidebar:
-        st.markdown("## 🧪 EcoMol QSAR Control Panel")
+        st.markdown("## 🧪 EcoMol QSAR Controls")
         st.caption(
             "Select a pre-trained classifier and upload holdout test data (`test_data.csv`) "
-            "for zero-retraining inference."
+            "for zero-retraining evaluation."
         )
         st.divider()
 
         chosen_model = st.selectbox(
-            "1. Choose Classification Model",
+            "1. Select Classification Model",
             options=list(MODEL_ARTIFACTS.keys()),
             index=0,
-            help="Loads the corresponding pre-trained Pipeline from the model/ directory.",
+            help="Loads the corresponding pre-trained scikit-learn Pipeline from model/.",
         )
 
         uploaded_csv = st.file_uploader(
@@ -227,9 +365,20 @@ def render_sidebar() -> Tuple[str, Optional[pd.DataFrame]]:
             help="Upload test data only (41 molecular descriptors + biodeg_class target column).",
         )
 
+        sample_bytes = load_sample_test_csv_bytes()
+        if sample_bytes:
+            st.download_button(
+                label="⬇️ Download Sample test_data.csv (211 rows)",
+                data=sample_bytes,
+                file_name="test_data.csv",
+                mime="text/csv",
+                use_container_width=True,
+                help="Download the 20% stratified holdout test set to test the uploader above.",
+            )
+
         st.divider()
         st.markdown(
-            "**Target Encoding:**\n"
+            "**Target Class Legend:**\n"
             "- `RB` (`1`): Readily Biodegradable\n"
             "- `NRB` (`0`): Not Readily Biodegradable"
         )
@@ -245,86 +394,149 @@ def render_sidebar() -> Tuple[str, Optional[pd.DataFrame]]:
 
 
 def main() -> None:
-    st.title("🧪 EcoMol QSAR: Chemical Biodegradability Screening")
+    inject_custom_theme()
+
     st.markdown(
-        "Evaluate five pre-trained machine learning pipelines on **41 molecular descriptors** "
-        "from the UCI QSAR Biodegradation benchmark (*Mansouri et al., 2013*). "
-        "Models are loaded directly from `model/` via `st.cache_resource` without retraining."
+        """
+        <div class="ecomol-banner">
+            <h1>🧪 EcoMol QSAR: Chemical Biodegradability Screening Workbench</h1>
+            <p>
+                End-to-end evaluation of 5 pre-trained classification pipelines across 41 molecular
+                descriptors (UCI QSAR Biodegradation benchmark). Models are loaded via
+                <code>st.cache_resource</code> and evaluated without retraining.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
+
+    render_dataset_overview_expander()
 
     expected_descriptors = get_expected_descriptor_names()
     chosen_model_name, uploaded_df = render_sidebar()
 
     try:
         active_pipeline = load_serialized_pipeline(chosen_model_name)
-        st.caption(
-            f"**Active Pipeline Loaded:** `{chosen_model_name}` "
-            f"(`model/{MODEL_ARTIFACTS[chosen_model_name]}`)"
-        )
     except Exception as load_err:
         st.error(f"Failed to load saved model pipeline: {load_err}")
         st.stop()
 
-    if uploaded_df is None:
-        st.info(
-            "👈 Please upload **`test_data.csv`** using the sidebar file uploader to compute "
-            "the 6 evaluation metrics, confusion matrix, and classification report."
-        )
-        return
-
-    is_valid, validation_msg = validate_uploaded_test_frame(
-        uploaded_df, expected_descriptors
-    )
-    if not is_valid:
-        st.error(f"❌ **Dataset Validation Error:** {validation_msg}")
-        st.stop()
-
-    st.success(
-        f"✅ {validation_msg} Evaluated **{len(uploaded_df)}** test compounds "
-        f"using **{chosen_model_name}** (zero retraining)."
+    tab_eval, tab_compare, tab_eda = st.tabs(
+        [
+            f"🔬 Active Model Evaluation ({chosen_model_name})",
+            "📈 All-Model Benchmark Comparison (5×6)",
+            "🧬 EDA & Descriptor Insights",
+        ]
     )
 
-    metrics_dict, y_true, y_pred, y_prob = evaluate_uploaded_compounds(
-        active_pipeline, uploaded_df, expected_descriptors
-    )
-
-    # Section 1: 6 Mandatory Evaluation Metrics (st.metric cards)
-    st.subheader(f"📊 Evaluation Metrics — {chosen_model_name}")
-    metric_cols = st.columns(6)
-    metric_order = ["Accuracy", "AUC", "Precision", "Recall", "F1", "MCC"]
-    for col_ui, m_key in zip(metric_cols, metric_order):
-        col_ui.metric(label=m_key, value=f"{metrics_dict[m_key]:.4f}")
-
-    st.divider()
-
-    # Section 2: Confusion Matrix Heatmap & Per-Class Classification Report
-    col_cm, col_rep = st.columns([1.05, 1.15])
-    with col_cm:
-        st.subheader("🎯 Confusion Matrix")
-        cm_fig = build_confusion_matrix_figure(y_true, y_pred, chosen_model_name)
-        st.pyplot(cm_fig, use_container_width=False)
-        plt.close(cm_fig)
-
-    with col_rep:
-        st.subheader("📋 Detailed Classification Report")
-        report_df = build_classification_report_table(y_true, y_pred)
-        st.dataframe(
-            report_df.style.format(
-                {
-                    "precision": "{:.4f}",
-                    "recall": "{:.4f}",
-                    "f1-score": "{:.4f}",
-                    "support": "{:d}",
-                }
-            ),
-            use_container_width=True,
+    with tab_eval:
+        st.caption(
+            f"**Loaded Artifact:** `model/{MODEL_ARTIFACTS[chosen_model_name]}` "
+            f"| **Pipeline Steps:** `ColumnTransformer(SimpleImputer + StandardScaler)` → `{chosen_model_name}`"
         )
 
-    with st.expander("Preview Uploaded Test Compounds & Predictions (First 15 Rows)", expanded=False):
-        preview_df = uploaded_df.copy()
-        preview_df.insert(0, "Predicted_Class", [INT_TO_LABEL[int(p)] for p in y_pred])
-        preview_df.insert(1, "RB_Probability", np.round(y_prob[:, 1], 4))
-        st.dataframe(preview_df.head(15), use_container_width=True)
+        if uploaded_df is None:
+            st.info(
+                "👈 **Upload `test_data.csv` in the sidebar** (or click *Download Sample test_data.csv* "
+                "in the sidebar first) to compute evaluation metrics, the confusion matrix, and "
+                "compound-level biodegradability predictions."
+            )
+        else:
+            is_valid, validation_msg = validate_uploaded_test_frame(
+                uploaded_df, expected_descriptors
+            )
+            if not is_valid:
+                st.error(f"❌ **Dataset Validation Error:** {validation_msg}")
+                st.stop()
+
+            st.success(
+                f"✅ {validation_msg} Evaluated **{len(uploaded_df)}** test compounds "
+                f"with **{chosen_model_name}** (zero retraining)."
+            )
+
+            metrics_dict, y_true, y_pred, y_prob = evaluate_uploaded_compounds(
+                active_pipeline, uploaded_df, expected_descriptors
+            )
+
+            st.subheader(f"📊 Evaluation Metrics — {chosen_model_name}")
+            metric_cols = st.columns(6)
+            for col_ui, m_key in zip(metric_cols, METRIC_COLUMNS):
+                col_ui.metric(label=m_key, value=f"{metrics_dict[m_key]:.4f}")
+
+            st.divider()
+
+            col_cm, col_rep = st.columns([1.05, 1.15])
+            with col_cm:
+                st.subheader("🎯 Confusion Matrix Heatmap")
+                cm_fig = build_confusion_matrix_figure(y_true, y_pred, chosen_model_name)
+                st.pyplot(cm_fig, use_container_width=False)
+                plt.close(cm_fig)
+
+            with col_rep:
+                st.subheader("📋 Per-Class Classification Report")
+                report_df = build_classification_report_table(y_true, y_pred)
+                st.dataframe(
+                    report_df.style.format(
+                        {
+                            "precision": "{:.4f}",
+                            "recall": "{:.4f}",
+                            "f1-score": "{:.4f}",
+                            "support": "{:d}",
+                        }
+                    ),
+                    use_container_width=True,
+                )
+
+            with st.expander("🔍 Inspect Compound-Level Predictions (First 20 Rows)", expanded=False):
+                pred_df = uploaded_df.copy()
+                pred_df.insert(0, "Predicted_Class", [INT_TO_LABEL[int(p)] for p in y_pred])
+                pred_df.insert(1, "RB_Probability", np.round(y_prob[:, 1], 4))
+                pred_df.insert(
+                    2,
+                    "Match",
+                    np.where(y_pred == y_true, "✅ Correct", "❌ Misclassified"),
+                )
+                st.dataframe(pred_df.head(20), use_container_width=True)
+
+    with tab_compare:
+        st.subheader("🏆 5-Model Holdout Test Benchmark (`results.csv`)")
+        try:
+            bench_df = load_benchmark_results_table()
+            st.dataframe(
+                bench_df.style.format({m: "{:.4f}" for m in METRIC_COLUMNS}).highlight_max(
+                    subset=METRIC_COLUMNS, color="#ccfbf1"
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.subheader("📊 Visual Comparison Across All 6 Evaluation Metrics")
+            comp_fig = build_all_models_comparison_chart(bench_df)
+            st.pyplot(comp_fig, use_container_width=True)
+            plt.close(comp_fig)
+        except Exception as bench_err:
+            st.warning(f"Could not load benchmark results table: {bench_err}")
+
+    with tab_eda:
+        st.subheader("🧬 Exploratory Data Analysis Visualizations")
+        eda_col1, eda_col2 = st.columns(2)
+        p_balance = ASSETS_DIR / "class_balance.png"
+        p_scale = ASSETS_DIR / "descriptor_scale_disparity.png"
+        p_corr = ASSETS_DIR / "top_descriptor_correlations.png"
+
+        with eda_col1:
+            if p_balance.exists():
+                st.image(str(p_balance), caption="Target Class Distribution (NRB vs RB)", use_container_width=True)
+        with eda_col2:
+            if p_scale.exists():
+                st.image(str(p_scale), caption="Descriptor Dynamic Range Disparity (Log10 Scale)", use_container_width=True)
+
+        if p_corr.exists():
+            st.image(
+                str(p_corr),
+                caption="Inter-Correlation Heatmap of Top 12 Biodegradability-Linked Molecular Descriptors",
+                use_container_width=True,
+            )
 
 
 if __name__ == "__main__":
